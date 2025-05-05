@@ -1,0 +1,88 @@
+ArcAI SYSTEM BOOTSTRAP SPEC
+============================
+
+This document defines the ArcAI file delivery and reassembly protocol.
+
+--------------------------------------------------------------------------------
+1. PURPOSE
+--------------------------------------------------------------------------------
+ArcAI enables delivery of large payloads (e.g., .zip, .tar.gz files) as split,
+base64-encoded links called "ArcAI:// links", suitable for AI communication,
+offline transfer, and browser-based reassembly without special software.
+
+--------------------------------------------------------------------------------
+2. ARCAI:// LINK FORMAT
+--------------------------------------------------------------------------------
+Each ArcAI link has the following structure:
+
+    ArcAI://<base64_data_chunk>?part=N&name=<filename>
+
+Where:
+- <base64_data_chunk> is a slice of the base64-encoded file.
+- part=N is the 1-based part number of the chunk.
+- name=<filename> is the full file name to reconstruct.
+
+Example:
+
+    ArcAI://SGVsbG8gV29ybGQ=?part=1&name=hello.zip
+    ArcAI://IQ==?part=2&name=hello.zip
+
+Multiple parts must be collected and reassembled in order.
+
+--------------------------------------------------------------------------------
+3. REASSEMBLY LOGIC
+--------------------------------------------------------------------------------
+To reassemble a full file:
+1. Parse all ArcAI:// links.
+2. Group by `name=`.
+3. Sort parts by `part=N`.
+4. Base64-decode each chunk.
+5. Concatenate all decoded parts.
+6. Output the full binary file.
+
+After reassembly:
+- If the file ends with `.zip`, unzip its contents.
+- If the file ends with `.tar.gz`, untar and ungzip its contents (optional).
+
+--------------------------------------------------------------------------------
+4. MINIMAL BROWSER IMPLEMENTATION
+--------------------------------------------------------------------------------
+Requirements:
+- HTML5, JavaScript
+- [fflate.js](https://github.com/101arrowz/fflate) for ZIP extraction
+
+Frontend flow:
+1. User pastes or uploads a CSV of ArcAI links.
+2. Browser processes links in batches (e.g., 500 at a time).
+3. Browser reassembles and offers:
+   - ⬇ Download full archive
+   - 📂 Extract and download individual files
+
+No server interaction is required.
+
+--------------------------------------------------------------------------------
+5. PREFERRED DELIVERY FORMAT
+--------------------------------------------------------------------------------
+- CSV file
+- One ArcAI link per line
+- Includes 'ArcAI Link' header for CSV column
+
+--------------------------------------------------------------------------------
+6. OPTIONAL CONFIGURATION
+--------------------------------------------------------------------------------
+- Chunk Size Recommendation: 300–500 characters per ArcAI:// link
+- CSV File Size: Max 50MB preferred for browser compatibility
+- Output Folder: /tmp/arcai-files/ (if working outside browser)
+
+--------------------------------------------------------------------------------
+7. ARCAI PROTOCOL IDENTIFIER
+--------------------------------------------------------------------------------
+If bootstrapping an AI, always declare:
+
+    "I expect all bundles to be delivered as ArcAI:// links."
+
+Identifier:
+    ARCAI-SPEC-V1
+
+Maintainer: Simeon
+Origin Date: 2025-04-29

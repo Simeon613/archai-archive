@@ -1,0 +1,171 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <title>ArcAI Browser Reassembler v2</title>
+  <script src="https://cdn.jsdelivr.net/npm/fflate@0.7.4/umd/index.js"></script>
+  <style>
+    body { font-family: sans-serif; padding: 2em; }
+    textarea { width: 100%; height: 150px; }
+    .file-entry { margin-bottom: 1em; }
+    .extracted-entry { margin-left: 1em; }
+    #progress { margin-top: 10px; }
+  </style>
+</head>
+<body>
+  <h1>🧩 ArcAI Reassembler + ZIP Extractor (Offline)</h1>
+  <p>Paste or upload a CSV of <code>ArcAI://</code> links:</p>
+
+  <textarea id="input" placeholder="Paste CSV here..."></textarea><br><br>
+  <input type="file" id="fileInput" />
+  <button onclick="startProcessing()">Start Processing</button>
+
+  <div id="progress"></div>
+
+  <h2>Files</h2>
+  <div id="output"></div>
+
+<script>
+let fileMap = {};
+let lines = [];
+let currentIndex = 0;
+const batchSize = 500;
+
+function parseArcAI(url) {
+  if (!url.startsWith("ArcAI://")) return null;
+  let [base, query] = url.slice(8).split("?");
+  if (!query) return null;
+  let params = new URLSearchParams(query);
+  let name = params.get("name");
+  let part = parseInt(params.get("part"), 10);
+  return { name, part, base };
+}
+
+function startProcessing() {
+  lines = document.getElementById("input").value.trim().split("\n");
+  fileMap = {};
+  currentIndex = 0;
+  document.getElementById("progress").innerText = "Starting...";
+  setTimeout(processBatch, 10);
+}
+
+function processBatch() {
+  const end = Math.min(currentIndex + batchSize, lines.length);
+  for (let i = currentIndex; i < end; i++) {
+    const parsed = parseArcAI(lines[i].trim());
+    if (!parsed) continue;
+    if (!fileMap[parsed.name]) fileMap[parsed.name] = {};
+    fileMap[parsed.name][parsed.part] = parsed.base;
+  }
+  currentIndex = end;
+  document.getElementById("progress").innerText = `Processed ${currentIndex} / ${lines.length} parts...`;
+
+  if (currentIndex < lines.length) {
+    setTimeout(processBatch, 10);
+  } else {
+    document.getElementById("progress").innerText = "✅ Processing complete.";
+    renderFileList();
+  }
+}
+
+function renderFileList() {
+  const out = document.getElementById("output");
+  out.innerHTML = "";
+  Object.keys(fileMap).forEach(name => {
+    const parts = fileMap[name];
+    const count = Object.keys(parts).length;
+    const highest = Math.max(...Object.keys(parts).map(Number));
+    const complete = count === highest;
+
+    const div = document.createElement("div");
+    div.className = "file-entry";
+    div.innerHTML = `<strong>${name}</strong> [${count}/${highest}] ${complete ? "✅" : "❌"}`;
+    if (complete) {
+      const btnDownload = document.createElement("button");
+      btnDownload.textContent = "⬇ Download .zip";
+      btnDownload.onclick = () => downloadZip(name, parts);
+
+      const btnExtract = document.createElement("button");
+      btnExtract.textContent = "📂 Extract Files";
+      btnExtract.onclick = () => handleZipExtraction(name, parts, div);
+
+      div.appendChild(btnDownload);
+      div.appendChild(btnExtract);
+    }
+    out.appendChild(div);
+  });
+}
+
+function downloadZip(name, parts) {
+  const ordered = Object.keys(parts).map(Number).sort((a, b) => a - b);
+  const byteArrays = [];
+  for (let i of ordered) {
+    const str = atob(parts[i]);
+    const buf = new Uint8Array(str.length);
+    for (let j = 0; j < str.length; j++) {
+      buf[j] = str.charCodeAt(j);
+    }
+    byteArrays.push(buf);
+  }
+  const totalLength = byteArrays.reduce((sum, arr) => sum + arr.length, 0);
+  const binary = new Uint8Array(totalLength);
+  let offset = 0;
+  for (let arr of byteArrays) {
+    binary.set(arr, offset);
+    offset += arr.length;
+  }
+  const blob = new Blob([binary], { type: "application/zip" });
+  const a = document.createElement("a");
+  a.href = URL.createObjectURL(blob);
+  a.download = name;
+  a.click();
+}
+
+function handleZipExtraction(name, parts, container) {
+  const ordered = Object.keys(parts).map(Number).sort((a, b) => a - b);
+  const byteArrays = [];
+  for (let i of ordered) {
+    const str = atob(parts[i]);
+    const buf = new Uint8Array(str.length);
+    for (let j = 0; j < str.length; j++) {
+      buf[j] = str.charCodeAt(j);
+    }
+    byteArrays.push(buf);
+  }
+
+  const totalLength = byteArrays.reduce((sum, arr) => sum + arr.length, 0);
+  const binary = new Uint8Array(totalLength);
+  let offset = 0;
+  for (let arr of byteArrays) {
+    binary.set(arr, offset);
+    offset += arr.length;
+  }
+
+  const files = fflate.unzipSync(binary);
+  const folder = document.createElement("div");
+  folder.innerHTML = `<em>📁 Extracted from ${name}</em>`;
+  for (const fname in files) {
+    const a = document.createElement("a");
+    a.href = URL.createObjectURL(new Blob([files[fname]]));
+    a.download = fname;
+    a.textContent = `🡇 ${fname}`;
+    const entry = document.createElement("div");
+    entry.className = "extracted-entry";
+    entry.appendChild(a);
+    folder.appendChild(entry);
+  }
+  container.appendChild(folder);
+}
+
+document.getElementById('fileInput').addEventListener('change', function(e) {
+  const file = e.target.files[0];
+  if (!file) return;
+  const reader = new FileReader();
+  reader.onload = function(evt) {
+    document.getElementById('input').value = evt.target.result;
+  };
+  reader.readAsText(file);
+});
+</script>
+</body>
+</html>
